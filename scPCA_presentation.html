@@ -85,7 +85,7 @@ the variation not found in the background data.
 
 cPCA provides its users with a novel approach for the removal of unwanted variation
 by taking advantage of experimental design which generated the data. That is,
-given a dataset which contains a wanted and unwanted variation, which we refer
+given a dataset which contains wanted and unwanted variation, which we refer
 to as the target, and a dataset containing only the unwanted variation, referred
 to as the background data, we can deflate the unwanted variation in the target
 data.
@@ -138,18 +138,6 @@ class: left, top
 SPCA &lt;a name=cite-Zou2006&gt;&lt;/a&gt;([Zou, Hastie, and Tibshirani, 2006](#bib-Zou2006)) provides interpretable loadings that are more
 stable in high dimensions. How is this accomplished?
 
---
-
-1. Re-frame PCA as a regression problem: PCA produces a linear manifold
-approximation of the data.
-2. Extend elasticnet regression to this regression problem. That is, include
-`\(\ell_1\)` and `\(\ell_2\)` penalty terms to induce sparsity in loadings vectors.
-
---
-
-This second step isn't as straightforward as in the typical regression setting,
-but it is possible to do it efficiently &lt;a name=cite-Erichson_2020&gt;&lt;/a&gt;([Erichson, Zheng, Manohar, Brunton, Kutz, and Aravkin, 2020](#bib-Erichson_2020)).
-
 ???
 
 Based on these drawbacks, you probably see where I'm going with SPCA. For those
@@ -157,11 +145,28 @@ of you who aren't familiar with SPCA, it's a method originally developed by
 Zou et al that increases the interpretability and stability of PCA in high
 dimensional settings. 
 
+--
+
+1. Re-frame PCA as a regression problem: PCA produces a linear manifold
+approximation of the data.
+2. Extend elasticnet regression to this regression problem. That is, include
+`\(\ell_1\)` and `\(\ell_2\)` penalty terms to induce sparsity in loadings vectors.
+
+???
+
 This is accomplished by first re-framing PCA as a linear regression problem, and
 then including L1 and L2 penalties in the objective function to induce sparsity
 in the loadings vectors. This is analogous to an elasticnet regression. And
 just like in classic elasticnet, lasso, and ridge regressions, the penalty
 hyperparamters have to be selected somehow.
+
+--
+
+
+This second step isn't as straightforward as in the typical regression setting,
+but it is possible to do it efficiently &lt;a name=cite-Erichson_2020&gt;&lt;/a&gt;([Erichson, Zheng, Manohar, Brunton, Kutz, and Aravkin, 2020](#bib-Erichson_2020)).
+
+???
 
 Now, this process isn't exactly as easy as I've let on, but there are some
 very efficient numerical methods to solve this problem. One that we employ in our
@@ -188,19 +193,21 @@ target and background datasets. We get the best of both of cPCA and SPCA:
 * scPCA's loadings are interpretable
 * scPCA's loadings are stable
 
---
-
-But what about the hyperparameters?
-
 ???
 
 As I mentioned before, scPCA is essentially a combination of the cPCA and SPCA,
 requiring only a few minor modifications required to make these methods well
 together.
 
-The result is a method sparse version of cPCA. That is, scPCA's are now
+The result is a sparse version of cPCA. That is, scPCA's are now
 interpretable and stable in the high-dimensional settings that we so often
-encounter when analyzing the data output by high-throughput assays.
+encounter when analyzing the data output by high-throughput experiments.
+
+--
+
+But what about the hyperparameters?
+
+???
 
 However, we're note completely done. We still need to come up with a way to
 select scPCA's hyperparameters: the contrastive parameters, and an L1 penalty
@@ -230,9 +237,22 @@ in the data is a concern.
 
 ???
 
-This attempts to solve one of the main issues with cPCA and SPCA, and can in
-fact be generalized to both. However, it assumes that there are clusters in
-the high-dimensional space.
+Now, selecting an optimal set of hyperparameters isn't an easy task in this kind
+of unsupervised setting since we don't have access to ground truth. However, if
+we're willing to make a few assumptions about the data, then we can come up with
+a reasonable heuristic for selecting a set of reasonable parametes automatically.
+
+Our procedure goes as follows: first, we specify a grid of hyperparameters, then
+we perform scPCA on our data for each combination of the L1 penalty and constrative paramerter. Next, we apply a clustering algorithm of our choice on the low-dimensional
+embedding, and then evaluate the separation of the clusters based on some clustering
+metric. We found that the average silhouette method performed quite well for this task.
+
+Now, this procedure only works if we expect to find distinct clusers in the
+data that we're analyzing. Thankfully is often the case anyways.
+Additionally, since this is is only a heuristic, we made a cross-validated version
+to decrease the chances of finding non-generalizable patterns in our
+low-dimensional embedding. It's also worth mentioning that this heuristic can
+be generalized to other dimensionality reduction procedures.
 
 ---
 class: left, top
@@ -245,18 +265,44 @@ The `scPCA` R package, released in Bioconductor 3.10, implements:
 3. cross-validated scPCA and cPCA
 4. cPCA with visual hyperparameter tuning
 
+???
+
+Now that you're familiar with the method, we can talk briefly about its
+implementation. scPCA has been implemented in the scPCA package, which was first
+released in Bioconductor 3.10. This package also implements two flavours of
+cPCA: cPCA with automated contrastive parameter tuning using the previously
+discussed heuristic, as well as the original method with visual tuning.
+
 --
 
 ### Relevant details:
 
-+ The hyperparameter tuning framework is embarrassingly parallel. Methods 1, 2, and 3 posses parallelized counterparts, making use of the `BiocParallel` infrastructure.
++ The hyperparameter tuning framework is embarrassingly parallel. Methods 1, 2, and 3 possess parallelized counterparts, making use of the `BiocParallel` infrastructure.
 + The `scPCA` package integrates fully with the `SingleCellExperiment` container class, allowing for these methods' seamless inclusion in scRNA-seq analysis pipelines. 
 + The scPCA method is applied to a contrastive covariance matrix; its running time is impacted by the number of features, not observations.
+
+???
+
+There are also some relevant details that worth mentioning: First, the hyperparameter
+tuning framework is embarrasingly parallel, and so all the package's methods that
+use it also possess parallel counterparts. These parallel versions rely on the
+BiocParallel infrastucture. Second, for those of you who might want to apply this
+method to some single cell RNA-seq data, the scPCA package integrates fully
+with the SingleCellExperiment container class. And, finally, the contrastive
+dimension reduction methods operate over a covariance matrix like structure. That
+means the computational complexity grows with the number of features, and not the
+number of observations. This can be a curse in some cases, but, if you're working
+with a large dataset, you'll find that these methods are significantly faster
+than other popular dimension reduction methods.
 
 ---
 class: middle, center, inverse
 
 # Example
+
+???
+
+So, with that said, let's take a look at scPCA in action.
 
 ---
 class: left, top
@@ -273,10 +319,17 @@ data to determine if they could disentangle the biological signal from the
 batch effect.
 
 ???
-Two groups had high levels of DE when compared to all others, making up the
-target dataset, and the remaining group, which has low-levels of DE, makes up
-the background data. A batch effect was included to mask the biological groups
-in the target data.
+
+We'll apply scPCA to a simulated, toy, single cell RNA-seq dataset where the
+ground truth is known. This small dataset, simulated with the Splat framework,
+consists of 300 cells, and 500 genes. These Cells are split into three groups
+of roughly equal size. The turquoise group corresponds to an uninteresting control 
+group, and the other two groups in green and purple correspond to the observations
+that we're actually interested in differentiating. All three of these simulated
+groups are split by the same batch effect.
+
+In the next slide, we apply a set of general dimension reduction methods to see
+if we can remove this batch from the target data.
 
 ---
 class: left, top
@@ -285,12 +338,23 @@ class: left, top
 
 .center[![](figures/sim_results.png)]
 
----
-class: left, top
+???
 
-# Simulated scRNA-seq Data (Cont.)
+Unsurprisingly, t-SNE and UMAP are unable to remove the batch effect; how could
+they? This is something of a sanity check. Next, let's look at cPCA. At first
+glance, the batch effect seems to have been removed. However, if we look
+closely, you'll notice that the observations are still stratified by batch along
+the second contrastive principal component. Now turning, our attention to the
+scPCA embedding, we find that the batch effect has been completely removed. The
+sparsification had the effect of removing the remaining amount of technical noise
+that the contrastive procedure couldn't. 
 
-.center2[![:scale 200%](figures/sim_loadings.png)]
+We also wanted to compare scPCA's results to a state of the art method dimension
+reduction method for scRNA-seq: zinb-wave. On the bottom right pane, zinb-wave was
+run as if the batch effect were a known and measured confounder, and it successfully
+removed the batch effect - though not as well as scPCA did. On the bottem left,
+zinb-wave was run as if the batch was an unknown condounder, and, as with t-SNE
+and UMAP, was not able to remove the simulated technical noise.
 
 ---
 class: inverse, center, middle
@@ -299,6 +363,12 @@ class: inverse, center, middle
 
 See our paper, Exploring High-Dimensional Biological Data with Sparse
 Contrastive Principal Component Analysis, for more information.
+
+???
+
+And that's it. That's all I have time to show you today. If scPCA has picked your
+interest, I encourage to checkout our paper, and to take a look at our packages
+vignette. Thanks!
 
 ---
 class: left, top
